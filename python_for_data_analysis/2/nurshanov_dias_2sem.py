@@ -212,3 +212,5 @@ if __name__ == '__main__':
     print(f'list for optiona a and b {test_list}')
     option1(test_list)
     option2(test_list)
+
+zip()
