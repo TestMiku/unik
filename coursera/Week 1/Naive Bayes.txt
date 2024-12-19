@@ -1,0 +1,232 @@
+# Necessary imports
+import numpy as np
+import pandas as pd
+from nltk.corpus import stopwords
+from nltk import word_tokenize
+import string
+import sys
+
+import w1_unittest  # This is the provided testing script in the assignment environment.
+
+# 1 - Introduction (No code required, just text)
+
+# 2 - Necessary imports are already done above
+
+# 3 - The Dataset
+
+# 3.1 Loading and exploring the dataset
+dataframe_emails = pd.read_csv('emails.csv')
+# print(dataframe_emails.head())
+
+print(f"Number of emails: {len(dataframe_emails)}")
+print(f"Proportion of spam emails: {dataframe_emails.spam.sum()/len(dataframe_emails):.4f}")
+print(f"Proportion of ham emails: {1 - dataframe_emails.spam.sum()/len(dataframe_emails):.4f}")
+
+# 3.2 Preprocessing the dataset
+def preprocess_emails(df):
+    # Shuffles the dataset
+    df = df.sample(frac=1, ignore_index=True, random_state=42)
+    # Removes the "Subject:" string and converts to numpy arrays
+    X = df.text.apply(lambda x: x[9:]).to_numpy()
+    Y = df.spam.to_numpy()
+    return X, Y
+
+X, Y = preprocess_emails(dataframe_emails)
+
+# 3.3 Preprocessing the text
+def preprocess_text(X):
+    stop = set(stopwords.words('english') + list(string.punctuation))
+
+    if isinstance(X, str):
+        X = np.array([X])
+
+    X_preprocessed = []
+    for email in X:
+        email = np.array([w.lower() for w in word_tokenize(email) if w.lower() not in stop]).astype(X.dtype)
+        X_preprocessed.append(email)
+
+    if len(X) == 1:
+        return X_preprocessed[0]
+    return X_preprocessed
+
+X_treated = preprocess_text(X)
+
+# 3.4 Splitting into train/test
+TRAIN_SIZE = int(0.80*len(X_treated))
+
+X_train = X_treated[:TRAIN_SIZE]
+Y_train = Y[:TRAIN_SIZE]
+X_test = X_treated[TRAIN_SIZE:]
+Y_test = Y[TRAIN_SIZE:]
+
+print(f"Proportion of spam in train dataset: {sum(Y_train == 1)/len(Y_train):.4f}")
+print(f"Proportion of spam in test dataset: {sum(Y_test == 1)/len(Y_test):.4f}")
+
+# 4 - Implementing the Naive Bayes Algorithm
+
+# 4.1.1 Creating the word_frequency dictionary
+
+### EXERCISE 1
+def get_word_frequency(X,Y):
+    """
+    Calculate the frequency of each word in a set of emails categorized as spam (1) or not spam (0).
+
+    Returns a dictionary where keys are words and values are {'spam': count, 'ham': count}.
+    Counts start at 1 to avoid zeros in computations.
+    """
+    word_dict = {}
+    num_emails = len(X)
+
+    for i in range(num_emails):
+        email = X[i]
+        cls = Y[i]
+        email = set(email)
+        for word in email:
+            if word not in word_dict:
+                # Initialize counts as 1 to avoid zero frequency
+                word_dict[word] = {"spam": 1, "ham": 1}
+            if cls == 1:
+                word_dict[word]['spam'] += 1
+            else:
+                word_dict[word]['ham'] += 1
+    return word_dict
+
+# Test your function
+test_output = get_word_frequency([['like','going','river'],
+                                  ['love','deep','river'],
+                                  ['hate','river']],
+                                 [1,0,0])
+print(test_output)
+
+# Unit test for get_word_frequency
+w1_unittest.test_get_word_frequency(get_word_frequency)
+
+# Build the word_frequency dictionary using the training set
+word_frequency = get_word_frequency(X_train, Y_train)
+class_frequency = {'ham': sum(Y_train == 0), 'spam': sum(Y_train == 1)}
+
+proportion_spam = class_frequency['spam']/(class_frequency['ham'] + class_frequency['spam'])
+print(f"The proportion of spam emails in training is: {proportion_spam:.4f}")
+
+### EXERCISE 2
+def prob_word_given_class(word, cls, word_frequency, class_frequency):
+    """
+    Calculate P(word | class) = (# emails in class containing word) / (# emails in that class)
+    """
+    amount_word_and_class = word_frequency[word][cls]
+    p_word_given_class = amount_word_and_class/class_frequency[cls]
+    return p_word_given_class
+
+print(f"P(lottery | spam) = {prob_word_given_class('lottery', cls = 'spam', word_frequency = word_frequency, class_frequency = class_frequency)}")
+print(f"P(lottery | ham) = {prob_word_given_class('lottery', cls = 'ham', word_frequency = word_frequency, class_frequency = class_frequency)}")
+print(f"P(schedule | spam) = {prob_word_given_class('schedule', cls = 'spam', word_frequency = word_frequency, class_frequency = class_frequency)}")
+print(f"P(schedule | ham) = {prob_word_given_class('schedule', cls = 'ham', word_frequency = word_frequency, class_frequency = class_frequency)}")
+
+# Unit test for prob_word_given_class
+w1_unittest.test_prob_word_given_class(prob_word_given_class, word_frequency, class_frequency)
+
+### EXERCISE 3
+def prob_email_given_class(treated_email, cls, word_frequency, class_frequency):
+    """
+    Compute P(email | class) by multiplying P(word | class) for every word in the treated_email.
+    """
+    prob = 1.0
+    for word in treated_email:
+        if word in word_frequency:
+            prob *= prob_word_given_class(word, cls, word_frequency, class_frequency)
+    return prob
+
+# Test with the given example
+example_email = "Click here to win a lottery ticket and claim your prize!"
+treated_email = preprocess_text(example_email)
+prob_spam_example = prob_email_given_class(treated_email, cls='spam', word_frequency=word_frequency, class_frequency=class_frequency)
+prob_ham_example = prob_email_given_class(treated_email, cls='ham', word_frequency=word_frequency, class_frequency=class_frequency)
+
+print(f"Email: {example_email}")
+print(f"Email after preprocessing: {treated_email}")
+print(f"P(email | spam) = {prob_spam_example}")
+print(f"P(email | ham) = {prob_ham_example}")
+
+# Unit test for prob_email_given_class
+w1_unittest.test_prob_email_given_class(prob_email_given_class, word_frequency, class_frequency)
+
+### EXERCISE 4
+def naive_bayes(treated_email, word_frequency, class_frequency, return_likelihood=False):
+    """
+    Compute P(spam)*P(email | spam) and P(ham)*P(email | ham), compare them and predict class.
+    If return_likelihood=True, return the tuple (spam_likelihood, ham_likelihood).
+    """
+    # Compute P(email | spam)
+    prob_email_given_spam = prob_email_given_class(treated_email, "spam", word_frequency, class_frequency)
+    # Compute P(email | ham)
+    prob_email_given_ham = prob_email_given_class(treated_email, "ham", word_frequency, class_frequency)
+
+    total_emails = sum(class_frequency.values())
+    p_spam = class_frequency["spam"] / total_emails
+    p_ham = class_frequency["ham"] / total_emails
+
+    spam_likelihood = p_spam * prob_email_given_spam
+    ham_likelihood = p_ham * prob_email_given_ham
+
+    if return_likelihood:
+        return (spam_likelihood, ham_likelihood)
+    elif spam_likelihood >= ham_likelihood:
+        return 1
+    else:
+        return 0
+
+# Test with examples
+example_email = "Click here to win a lottery ticket and claim your prize!"
+treated_email = preprocess_text(example_email)
+print(f"Email: {example_email}\nEmail after preprocessing: {treated_email}\nNaive Bayes predicts this email as: {naive_bayes(treated_email, word_frequency, class_frequency)}")
+
+example_email = "Our meeting will happen in the main office. Please be there in time."
+treated_email = preprocess_text(example_email)
+print(f"Email: {example_email}\nEmail after preprocessing: {treated_email}\nNaive Bayes predicts this email as: {naive_bayes(treated_email, word_frequency, class_frequency)}")
+
+# Unit test for naive_bayes
+w1_unittest.test_naive_bayes(naive_bayes, word_frequency, class_frequency)
+
+
+# 4.4 Model performance (not graded)
+def get_true_positives(Y_true, Y_pred):
+    if len(Y_true) != len(Y_pred):
+        return "Number of true labels and predict labels must match!"
+    n = len(Y_true)
+    true_positives = 0
+    for i in range(n):
+        if Y_true[i] == 1 and Y_pred[i] == 1:
+            true_positives += 1
+    return true_positives
+
+def get_true_negatives(Y_true, Y_pred):
+    if len(Y_true) != len(Y_pred):
+        return "Number of true labels and predict labels must match!"
+    n = len(Y_true)
+    true_negatives = 0
+    for i in range(n):
+        if Y_true[i] == 0 and Y_pred[i] == 0:
+            true_negatives += 1
+    return true_negatives
+
+# Predictions on test set
+Y_pred = []
+for email in X_test:
+    prediction = naive_bayes(email, word_frequency, class_frequency)
+    Y_pred.append(prediction)
+
+true_positives_val = get_true_positives(Y_test, Y_pred)
+true_negatives_val = get_true_negatives(Y_test, Y_pred)
+accuracy = (true_positives_val + true_negatives_val)/len(Y_test)
+
+print(f"Accuracy is: {accuracy:.4f}")
+
+# Example test:
+email = "Please meet me in 2 hours in the main building. I have an important task for you."
+treated_email = preprocess_text(email)
+prediction = "spam" if naive_bayes(treated_email, word_frequency, class_frequency) == 1 else "ham"
+print(f"The email is: {email}\nThe model predicts it as {prediction}.")
+
+# The assignments in sections 5 are not graded, so we won't rewrite them here.
+
+print("\nAll required exercises (1 to 4) are completed successfully!")
