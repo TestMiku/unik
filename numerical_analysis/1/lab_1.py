@@ -38,17 +38,12 @@ for n in range(time_steps):
 
 
 fig, axis_x = plt.subplots()
-line, = axis_x.plot(x, solution_matrix[0], color='red')
+line, = axis_x.plot(x, solution_matrix[50], color='red')
 axis_x.set_xlim(x_min, x_max)
 axis_x.set_ylim(0, t_max)
 axis_x.set_xlabel('x')
 axis_x.set_xlabel('u(x,t)')
 
 axis_x.set_label("perenos equations")
-def update_plot(frame, x, y, line):
-    line.set_ydata(y[frame])
-    return line,
-ani = animation.FuncAnimation(fig, update_plot, frames=range(len(solution_matrix)), 
-                              fargs=(x, solution_matrix, line), interval=50, blit=True)
 
 plt.show()
